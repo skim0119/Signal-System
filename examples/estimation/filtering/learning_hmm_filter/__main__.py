@@ -12,11 +12,10 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, PRNGKeyArray
 
-from ss.estimation.filtering.hmm import HmmFilter
-from ss.estimation.filtering import batch_filtering
+from ss.estimation.filtering import HmmFilter, filtering
 from ss.utility.learning import LearningProcess
-from ss.system.discrete import HiddenMarkovModel
-from ss.system import simulate
+from ss.system import HiddenMarkovModel, simulate
+from ss.utility.parameter.probability import ProbabilityParameter
 
 
 # random initialize transition and emission matrices (rows are distributions)
@@ -38,8 +37,8 @@ def cross_entropy_loss(
     Args:
         model: The HMM model.
         batch: An array of shape
-          (batch_size, sequence_length+1, observation_dim=1)
-          containing the true observations.
+          ``(sequence_length+1, batch_size, observation_dim=1)`` containing
+          the true observations.
         random_key: A random key for generating random numbers.
     Returns:
         The average cross-entropy loss over the batch.
@@ -48,22 +47,22 @@ def cross_entropy_loss(
         "random_key must be provided for loss computation"
     )
 
-    batch_size, sequence_length_plus_one, observation_dim = batch.shape
-    input_observations = batch[:, :-1, :]  # all but last observation
-    target_observations = batch[:, 1:, :]  # all but first observation
+    sequence_length_plus_one, batch_size, observation_dim = batch.shape
+    assert batch_size == model.batch_size, (
+        f"batch size {batch_size} must match filter.batch_size {model.batch_size}"
+    )
+    input_observations = batch[:-1, :, :]
+    target_observations = batch[1:, :, :]
 
-    # Normalize so each row sums to 1.0
-    initial_beliefs = jax.random.dirichlet(
+    initial_belief = jax.random.dirichlet(
         random_key, alpha=jnp.ones(model.state_dim), shape=(batch_size,)
     )
 
-    _, batch_beliefs = batch_filtering(
-        model, 0, initial_beliefs, input_observations
-    )
+    beliefs = filtering(model, initial_belief, input_observations)
 
     # Compute the predicted observation distributions
     predicted_observation_distributions = jnp.einsum(
-        "bts,so->bto", batch_beliefs, model.emission_matrix
+        "tbs,so->tbo", beliefs, model.emission_matrix
     )
     # TODO: Refactor to compute cross-entropy (-sum(targets * log(probs))).
     # Passing log(probs) into softmax_cross_entropy works mathematically, but
@@ -91,7 +90,12 @@ if __name__ == "__main__":
     transition_matrix = random_stochastic_matrix(2, 2, key_transition)
     emission_matrix = random_stochastic_matrix(2, 2, key_emission)
 
-    system = HiddenMarkovModel(transition_matrix, emission_matrix)
+    system = HiddenMarkovModel(
+        transition=ProbabilityParameter(transition_matrix),
+        emission=ProbabilityParameter(emission_matrix),
+        discrete_state_dim=2,
+        discrete_observation_dim=2,
+    )
 
     print(f"System: {system}")
 
@@ -100,14 +104,10 @@ if __name__ == "__main__":
     print("=== single rollout ===")
     time_horizon = 10
 
-    initial_state = jnp.array(0, dtype=jnp.int32)
-    random_keys = jax.random.split(random_key, time_horizon)
+    initial_state = system.initial_state(random_key)
 
     times, states, observations, _ = simulate(
-        system,
-        0,
-        initial_state,
-        random_keys,
+        system, 0, time_horizon, initial_state, random_key
     )
 
     print(states)
@@ -119,7 +119,13 @@ if __name__ == "__main__":
     transition_matrix = random_stochastic_matrix(2, 2, key_transition)
     emission_matrix = random_stochastic_matrix(2, 2, key_emission)
 
-    filter = HmmFilter(transition_matrix, emission_matrix)
+    filter = HmmFilter(
+        transition=ProbabilityParameter(transition_matrix),
+        emission=ProbabilityParameter(emission_matrix),
+        discrete_state_dim=2,
+        discrete_observation_dim=2,
+        state_dim=2,
+    )
     print("=== filtering ===")
     print(f"filter: {filter}")
     print(filter.transition_matrix)
@@ -129,9 +135,8 @@ if __name__ == "__main__":
     )
 
     learning_process.train_one_epoch(
-        training_data_loader=[
-            observations[None, :, :] for _ in range(10)
-        ],  # iterator of shape (1, time_horizon, 1)
+        # (time, batch, observation_dim)
+        training_data_loader=[observations for _ in range(10)],
         validation_data_loader=None,
         random_key=jax.random.PRNGKey(0),
     )

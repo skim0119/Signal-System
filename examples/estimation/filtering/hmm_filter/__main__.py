@@ -9,79 +9,127 @@ estimate the hidden states from the observed data.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import click
 import jax
 import jax.numpy as jnp
 
-from ss.system.discrete import HiddenMarkovModel
-from ss.system import simulate
+from ss.estimation.filtering import HmmFilter, filtering
+from ss.system import HiddenMarkovModel, simulate
+from ss.utility.parameter.probability import ProbabilityParameter
 
-from ss.estimation.filtering.hmm import HmmFilter
-from ss.estimation.filtering import filtering, batch_filtering
+from .post_processing import plot_filtering
+
+
+@click.command()
+@click.option(
+    "--simulation-steps",
+    type=click.IntRange(min=1),
+    default=30,
+    help="The simulation time steps.",
+)
+# @click.option(
+#     "--step-skip",
+#     type=click.IntRange(min=1),
+#     default=1,
+#     help="Subsample stride when reporting trajectories.",
+# )
+# @click.option(
+#     "--state-dim",
+#     type=click.IntRange(min=1),
+#     default=3,
+#     help="Number of discrete hidden states.",
+# )
+# @click.option(
+#     "--discrete-observation-dim",
+#     type=click.IntRange(min=1),
+#     default=7,
+#     help="Number of discrete observation symbols.",
+# )
+@click.option(
+    "--batch-size",
+    type=click.IntRange(min=1),
+    default=1,
+    help="Batch size (positive integers).",
+)
+@click.option(
+    "--random-seed",
+    type=click.IntRange(min=0),
+    default=2024,
+    help="The random seed (non-negative integers).",
+)
+@click.option(
+    "--save-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Save the filtering plot in this directory.",
+)
+def main(
+    simulation_steps: int,
+    # step_skip: int,
+    # state_dim: int,
+    # discrete_observation_dim: int,
+    batch_size: int,
+    random_seed: int,
+    save_dir: Path | None,
+) -> None:
+    key = jax.random.PRNGKey(random_seed)
+    filter_key, simulate_key = jax.random.split(key)
+    # Set HMM system and simulate to get observationss
+
+    # fmt: off
+    # NOTE: hardcoded for demonstration purposes. Later, replace with some sort of
+    # table generation with arbitrary state and observation dimensions.
+    state_dim = 2
+    discrete_observation_dim = 2
+    transition_parameter = ProbabilityParameter(
+        [[0.7, 0.3],
+         [0.4, 0.6]]
+    )
+    emission_parameter = ProbabilityParameter(
+        [[0.9, 0.1],
+         [0.2, 0.8]]
+    )
+    # fmt: on
+
+    system = HiddenMarkovModel(
+        transition=transition_parameter,
+        emission=emission_parameter,
+        discrete_state_dim=state_dim,
+        discrete_observation_dim=discrete_observation_dim,
+        batch_size=batch_size,
+    )
+
+    initial_state = system.initial_state()
+    times, states, observations, _ = simulate(
+        system, 0.0, simulation_steps, initial_state, simulate_key
+    )
+
+    # Set HMM filter and apply filtering to get beliefs.
+    filter = HmmFilter(
+        transition=transition_parameter,
+        emission=emission_parameter,
+        discrete_state_dim=state_dim,
+        discrete_observation_dim=discrete_observation_dim,
+        state_dim=state_dim,
+        batch_size=batch_size,
+    )
+    initial_belief = jnp.full((batch_size, filter.state_dim), 1.0 / state_dim)
+    beliefs = filtering(filter, initial_belief, observations)
+
+    print(f"system: {system}")
+    print(f"filter: {filter}")
+    print(f"states shape: {states.shape}")
+    print(f"observations shape: {observations.shape}")
+    print(f"beliefs shape: {beliefs.shape}")
+
+    if save_dir is not None:
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = save_dir / "hmm_filter_plot.png"
+        plot_filtering(
+            times, states, observations, beliefs, save_path=save_path
+        )
 
 
 if __name__ == "__main__":
-    print(
-        "=== Discrete State Dynamic System Simulation: Hidden Markov Model ==="
-    )
-
-    transition_matrix = jnp.array([[0.7, 0.3], [0.4, 0.6]])
-    emission_matrix = jnp.array([[0.9, 0.1], [0.2, 0.8]])
-
-    system = HiddenMarkovModel(transition_matrix, emission_matrix)
-
-    print(f"System: {system}")
-
-    random_key = jax.random.PRNGKey(0)
-
-    print("=== single rollout ===")
-    time_horizon = 10
-
-    initial_state = system.initial_state(random_key)
-    random_keys = jax.random.split(random_key, time_horizon)
-
-    times, states, observations, _ = simulate(
-        system,
-        0,
-        initial_state,
-        random_keys,
-    )
-
-    print(states)
-    print(observations)
-    print(observations.shape)
-
-    filter = HmmFilter(transition_matrix, emission_matrix)
-
-    print("=== filtering ===")
-    print(f"filter: {filter}")
-
-    initial_belief = jnp.array([0.5, 0.5])
-    times, beliefs = filtering(filter, 0, initial_belief, observations)
-
-    print("times:", times)
-    print("beliefs:", beliefs)
-
-    print("=== batch filtering ===")
-    batch_size = 5
-    systems = system.duplicate(batch_size=batch_size)
-
-    initial_state_key, random_key = jax.random.split(random_key)
-    initial_state_keys = jax.random.split(initial_state_key, batch_size)
-    init_states = systems.initial_state(initial_state_keys)
-    random_keys = jax.random.split(random_key, time_horizon)
-
-    batch_times, batch_states, batch_observations, _ = simulate(
-        systems, 0, init_states, random_keys
-    )
-
-    print("batch_times shape:", batch_times.shape)
-    print("batch_states shape:", batch_states.shape)
-    print("batch_observations shape:", batch_observations.shape)
-
-    initial_beliefs = jnp.tile(jnp.array([0.5, 0.5]), (batch_size, 1))
-    batch_times, batch_beliefs = batch_filtering(
-        filter, 0, initial_beliefs, batch_observations
-    )
-
-    print("batch_times shape:", batch_times.shape)
-    print("batch_beliefs shape:", batch_beliefs.shape)
+    main()
