@@ -10,7 +10,7 @@ if TYPE_CHECKING:
         simulate,
     )
     from .cart_pole import CartPoleSystem
-    # from .discrete import HiddenMarkovModel
+    from .discrete_hmm import HiddenMarkovModel
     # from .linear import (
     #     ContinuousTimeLinearSystem,
     #     DiscreteTimeLinearSystem,
@@ -26,7 +26,7 @@ _EXPORTS: dict[str, str] = {
     "System": "_system",
     "simulate": "_system",
     "CartPoleSystem": "cart_pole",
-    # "HiddenMarkovModel": "discrete",
+    "HiddenMarkovModel": "discrete_hmm",
     # "ContinuousTimeLinearSystem": "linear",
     # "DiscreteTimeLinearSystem": "linear",
     # "ContinuousTimeNonlinearSystem": "nonlinear",

@@ -7,17 +7,21 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 
-from ss.system.discrete import HiddenMarkovModel
-from ss.system import simulate
+from ss.system import HiddenMarkovModel, simulate
+from ss.utility.parameter.probability import ProbabilityParameter
 
 if __name__ == "__main__":
     print(
         "=== Discrete State Dynamic System Simulation: Hidden Markov Model ==="
     )
 
+    transition = jnp.array([[0.7, 0.3], [0.4, 0.6]])
+    emission = jnp.array([[0.8, 0.2], [0.2, 0.8]])
     system = HiddenMarkovModel(
-        transition_matrix=jnp.array([[0.7, 0.3], [0.4, 0.6]]),
-        emission_matrix=jnp.array([[0.8, 0.2], [0.2, 0.8]]),
+        transition=ProbabilityParameter(transition),
+        emission=ProbabilityParameter(emission),
+        discrete_state_dim=2,
+        discrete_observation_dim=2,
     )
 
     print("transition_matrix:\n", system.transition_matrix)
@@ -32,13 +36,9 @@ if __name__ == "__main__":
     random_key = jax.random.PRNGKey(0)
 
     initial_state = system.initial_state(random_key)
-    random_keys = jax.random.split(random_key, time_horizon)
 
     times, states, observations, _ = simulate(
-        system,
-        0,
-        initial_state,
-        random_keys,
+        system, 0, time_horizon, initial_state, random_key
     )
 
     print("times:", times.shape)
@@ -51,12 +51,10 @@ if __name__ == "__main__":
 
     random_key = jax.random.PRNGKey(0)
     initial_state_key, random_key = jax.random.split(random_key)
-    initial_state_keys = jax.random.split(initial_state_key, batch_size)
-    init_states = systems.initial_state(initial_state_keys)
-    random_keys = jax.random.split(random_key, time_horizon)
+    init_states = systems.initial_state(initial_state_key)
 
     batch_times, batch_states, batch_observations, _ = simulate(
-        systems, 0, init_states, random_keys
+        systems, 0, time_horizon, init_states, random_key
     )
 
     print("batch_times shape:", batch_times.shape)
