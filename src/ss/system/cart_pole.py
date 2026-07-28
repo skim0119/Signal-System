@@ -13,12 +13,12 @@ class CartPoleSystem(System):
     state_dim: int = eqx.field(static=True, default=4)
     observation_dim: int = eqx.field(static=True, default=4)
     control_dim: int = eqx.field(static=True, default=1)
+    batch_size: int = eqx.field(static=True, default=1)
 
     cart_mass: float = 1.0
     pole_mass: float = 0.01
     pole_length: float = 2.0
     gravity: float = 9.81
-    batch_size: int = eqx.field(static=True, default=1)
 
     def __check_init__(self) -> None:
         super().__check_init__()
@@ -31,7 +31,7 @@ class CartPoleSystem(System):
 
     def initial_state(
         self, random_key: PRNGKeyArray | None = None
-    ) -> Float[Array, "batch_size state_dim"]:  # noqa: F722
+    ) -> Float[Array, "batch_size state_dim"]:
         """Initialize near the unstable upright equilibrium."""
         state = jnp.broadcast_to(
             jnp.zeros(self.state_dim),
@@ -40,6 +40,7 @@ class CartPoleSystem(System):
         if random_key is None:
             return state
 
+        # NOTE: deviation is arbitrary for demonstration purpose.
         standard_deviation = jnp.array([0.05, 0.02, 0.05, 0.02])
         return state + standard_deviation * jax.random.normal(
             random_key, shape=(self.batch_size, self.state_dim)
@@ -75,9 +76,9 @@ class CartPoleSystem(System):
     def dynamics(
         self,
         time: float,
-        state: Array,
+        state: Float[Array, "batch_size state_dim"],
         control: Array | None = None,
-    ) -> Array:
+    ) -> Float[Array, "batch_size state_dim"]:
         """Evaluate the cart-pole ordinary differential equation."""
 
         # ellipsis ... enables both single-instance and batch instance
@@ -99,6 +100,7 @@ class CartPoleSystem(System):
         ) - pole_mass_length * pole_angular_velocity**2 * jnp.sin(
             pole_angle
         ) * jnp.cos(pole_angle)
+        # NOTE: branching for control case
         if control is not None:
             force = control[..., 0]
             common_numerator += force

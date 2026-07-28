@@ -1,5 +1,3 @@
-# ruff: noqa: F722, F821
-
 from collections.abc import Callable
 
 import equinox as eqx
@@ -23,7 +21,7 @@ type RolloutInputs = tuple[
 
 
 class MPPIControllerState(eqx.Module):
-    nominal_controls: Float[Array, "batch_size horizon control_dim"]  # noqa: F722
+    nominal_controls: Float[Array, "batch_size horizon control_dim"]
 
 
 class MPPIDiagnostics(eqx.Module):
@@ -68,7 +66,7 @@ class MPPIController(Controller):
         assert self.noise_sigma > 0
         assert self.control_limit > 0
 
-    def init_state(
+    def initial_state(
         self, random_key: PRNGKeyArray | None = None
     ) -> MPPIControllerState:
         return MPPIControllerState(

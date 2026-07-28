@@ -17,7 +17,7 @@ class Controller(eqx.Module):
         assert self.control_dim > 0, "control_dim must be > 0"
         assert self.batch_size > 0, "batch_size must be > 0"
 
-    def init_state(
+    def initial_state(
         self, random_key: PRNGKeyArray | None = None
     ) -> ControllerState:
         return ()
