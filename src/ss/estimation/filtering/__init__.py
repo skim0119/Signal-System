@@ -3,13 +3,13 @@
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ._filtering import Filter, filtering_step, filtering, batch_filtering
+    from ._filtering import Filter, filtering
+    from .hmm_filter import HmmFilter
 
 _EXPORTS: dict[str, str] = {
     "Filter": "_filtering",
-    "filtering_step": "_filtering",
     "filtering": "_filtering",
-    "batch_filtering": "_filtering",
+    "HmmFilter": "hmm_filter",
 }
 
 __all__ = list(_EXPORTS)

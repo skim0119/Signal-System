@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from functools import partial
-from typing import TypeVar
+from abc import abstractmethod
+from copy import copy
+from typing import Self, TypeVar
 
 import equinox as eqx
 import jax
-import jax.numpy as jnp
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Shaped
 
 
 class Filter(eqx.Module):
@@ -14,6 +14,7 @@ class Filter(eqx.Module):
     state_dim: int = eqx.field(static=True)
     observation_dim: int = eqx.field(static=True)
     control_dim: int = eqx.field(static=True)
+    batch_size: int = eqx.field(static=True)
 
     def __check_init__(self) -> None:
         assert self.time_step >= 0, f"time_step {self.time_step} must be >= 0"
@@ -24,103 +25,87 @@ class Filter(eqx.Module):
         assert self.control_dim >= 0, (
             f"control_dim {self.control_dim} must be >= 0"
         )
+        assert self.batch_size > 0, f"batch_size {self.batch_size} must be > 0"
 
-    def init_state(self) -> Float[Array, "state_dim"]:
-        return jnp.zeros(self.state_dim)
+    def duplicate(self, *, batch_size: int | None = None) -> Self:
+        """Return an immutable copy configured for a new batch size."""
+        if batch_size is None:
+            batch_size = self.batch_size
+        assert batch_size > 0, f"batch_size {batch_size} must be > 0"
+        duplicate = copy(self)
+        object.__setattr__(duplicate, "batch_size", batch_size)
+        return duplicate
 
+    @abstractmethod
     def update(
         self,
-        time: Float,
-        prior: Float[Array, "state_dim"],
-        observation: Float[Array, "observation_dim"],
-        # control: Float[Array, "control_dim"],
-    ) -> tuple[Float, Float[Array, "state_dim"]]:
-        posterior = prior
-        return (time + self.time_step, posterior)
+        prior: Float[Array, "batch_size state_dim"],
+        observation: Float[Array, "batch_size observation_dim"],
+    ) -> Float[Array, "batch_size state_dim"]:
+        """Return filtered posterior given prior and observation.
+
+        This is the only required filtering kernel. Some filters naturally
+        combine update and prediction into one operation; those filters
+        can keep the default identity implementation of :meth:`predict`.
+        """
+
+    def predict(
+        self,
+        posterior: Float[Array, "batch_size state_dim"],
+    ) -> Float[Array, "batch_size state_dim"]:
+        """Predict next-step prior from posterior.
+
+        Why this is not abstract:
+            Not every filter has a separate prediction step. For update-only
+            filters (or filters that fold dynamics into :meth:`update`),
+            forcing a `predict` override only adds boilerplate identity code.
+
+        When to override:
+            Override this method when your filter has explicit transition
+            dynamics, e.g. a Chapman-Kolmogorov step for HMMs or model-based
+            temporal propagation.
+
+        Default behavior:
+            Identity map, so ``prior_{t+1} = posterior_t``.
+        """
+        return posterior
 
 
 FilterT = TypeVar("FilterT", bound=Filter)
 
 
-def filtering_step(
-    filter: FilterT,
-    carry: tuple[Float, Array],
-    observation: Array,
-) -> tuple[tuple[Float, Array], tuple[Float, Array]]:
-    previous_time, previous_belief = carry
-
-    time, belief = filter.update(previous_time, previous_belief, observation)
-    return (time, belief), (time, belief)
-
-
 def filtering(
     filter: FilterT,
-    initial_time: Float,
-    initial_belief: Array,
-    observations: Array,
-) -> tuple[Array, Array]:
-    """Run a filtering algorithm on a sequence of observations.
+    initial_belief: Float[Array, "batch_size state_dim"],
+    observations: Shaped[Array, "time batch_size observation_dim"],
+) -> Float[Array, "time batch_size state_dim"]:
+    """Run filtering over a time-leading observation sequence.
+
+    Layout matches ``simulate`` / ``lax.scan``: time axis first, then batch.
+    Returns filtered beliefs ``p(x_t | y_{1:t})``.
 
     Args:
         filter: The filter to use for the filtering process.
-        initial_time: The initial time before processing any observations.
-        initial_belief: The initial belief state before processing any
-            observations.
-        observations: A sequence of observations to process.
+        initial_belief: Prior before the first observation,
+            shape ``(batch_size, state_dim)``.
+        observations: Observations with shape
+            ``(time, batch_size, observation_dim)``.
 
     Returns:
-        A tuple containing:
-            - An array of times corresponding to each observation processed.
-            - An array of beliefs corresponding to each observation processed.
+        Filtered beliefs, shape ``(time, batch_size, state_dim)``.
     """
 
-    body = partial(filtering_step, filter)
+    def step(
+        prior: Float[Array, "batch_size state_dim"],
+        observation: Float[Array, "batch_size observation_dim"],
+    ) -> tuple[
+        Float[Array, "batch_size state_dim"],  # next prior (scan carry)
+        Float[
+            Array, "batch_size state_dim"
+        ],  # filtered posterior (scan output)
+    ]:
+        posterior = filter.update(prior, observation)
+        return filter.predict(posterior), posterior
 
-    _, (times, beliefs) = jax.lax.scan(
-        body, (initial_time, initial_belief), observations
-    )
-
-    if beliefs.ndim == 1:
-        beliefs = beliefs[:, jnp.newaxis]
-
-    return times, beliefs
-
-
-def batch_filtering(
-    filter: FilterT,
-    initial_time: Float,
-    initial_beliefs: Array,  # (batch, state_dim,)
-    observations: Array,  # (batch, time_horizon, observation_dim,)
-) -> tuple[Array, Array]:
-    """Run a filtering algorithm on a batch of sequences of observations.
-
-    Args:
-        filter: The filter to use for the filtering process.
-        initial_time: The initial time before processing any observations.
-        initial_beliefs: An array of initial belief states for each sequence in
-            the batch.
-        observations: A batch of sequences of observations to process.
-
-    Returns:
-        A tuple containing:
-            - An array of times corresponding to each observation processed for
-                each sequence in the batch.
-            - An array of beliefs corresponding to each observation processed
-                for each sequence in the batch.
-    """
-
-    # filter is static, initial_time is static
-    # initial_beliefs and observations are batched
-    _batch_filtering = jax.vmap(
-        filtering,
-        in_axes=(
-            None,
-            None,
-            0,
-            0,
-        ),
-    )
-
-    return _batch_filtering(
-        filter, initial_time, initial_beliefs, observations
-    )
+    _, beliefs = jax.lax.scan(step, initial_belief, observations)
+    return beliefs
