@@ -20,8 +20,6 @@ if __name__ == "__main__":
     system = HiddenMarkovModel(
         transition=ProbabilityParameter(transition),
         emission=ProbabilityParameter(emission),
-        discrete_state_dim=2,
-        discrete_observation_dim=2,
     )
 
     print("transition_matrix:\n", system.transition_matrix)

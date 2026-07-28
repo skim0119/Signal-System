@@ -93,8 +93,6 @@ if __name__ == "__main__":
     system = HiddenMarkovModel(
         transition=ProbabilityParameter(transition_matrix),
         emission=ProbabilityParameter(emission_matrix),
-        discrete_state_dim=2,
-        discrete_observation_dim=2,
     )
 
     print(f"System: {system}")
@@ -122,8 +120,6 @@ if __name__ == "__main__":
     filter = HmmFilter(
         transition=ProbabilityParameter(transition_matrix),
         emission=ProbabilityParameter(emission_matrix),
-        discrete_state_dim=2,
-        discrete_observation_dim=2,
         state_dim=2,
     )
     print("=== filtering ===")

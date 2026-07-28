@@ -31,12 +31,6 @@ class HiddenMarkovModel(DiscreteTimeSystem):
     transition: ProbabilityParameter
     emission: ProbabilityParameter
 
-    # NOTE: kw_only to enforce the user to explicitly write the dimension.
-    discrete_state_dim: int = eqx.field(static=True, default=2, kw_only=True)
-    discrete_observation_dim: int = eqx.field(
-        static=True, default=2, kw_only=True
-    )
-
     time_step: float = eqx.field(static=True, default=1.0, kw_only=True)
     state_dim: int = eqx.field(static=True, default=1, kw_only=True)
     observation_dim: int = eqx.field(static=True, default=1, kw_only=True)
@@ -46,24 +40,24 @@ class HiddenMarkovModel(DiscreteTimeSystem):
     def __check_init__(self) -> None:
         super().__check_init__()
         transition_shape = self.transition_matrix.shape
-        assert (
-            transition_shape[0]
-            == transition_shape[1]
-            == self.discrete_state_dim
-        ), (
+        assert transition_shape[0] == transition_shape[1], (
             f"transition_matrix must be square "
-            f"({self.discrete_state_dim}, {self.discrete_state_dim}), "
+            f"({transition_shape[0]}, {transition_shape[0]}), "
             f"got {transition_shape}"
         )
         emission_shape = self.emission_matrix.shape
-        assert emission_shape[0] == self.discrete_state_dim, (
-            f"emission_matrix must have {self.discrete_state_dim} rows, "
+        assert emission_shape[0] == transition_shape[0], (
+            f"emission_matrix must have {transition_shape[0]} rows, "
             f"got shape {emission_shape}"
         )
-        assert emission_shape[1] == self.discrete_observation_dim, (
-            f"emission_matrix must have {self.discrete_observation_dim} "
-            f"columns, got shape {emission_shape}"
-        )
+
+    @property
+    def discrete_state_dim(self) -> int:
+        return self.transition_matrix.shape[0]
+
+    @property
+    def discrete_observation_dim(self) -> int:
+        return self.emission_matrix.shape[1]
 
     @property
     def transition_matrix(self) -> TransitionMatrix:

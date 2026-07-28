@@ -95,8 +95,6 @@ def main(
     system = HiddenMarkovModel(
         transition=transition_parameter,
         emission=emission_parameter,
-        discrete_state_dim=state_dim,
-        discrete_observation_dim=discrete_observation_dim,
         batch_size=batch_size,
     )
 
@@ -109,8 +107,6 @@ def main(
     filter = HmmFilter(
         transition=transition_parameter,
         emission=emission_parameter,
-        discrete_state_dim=state_dim,
-        discrete_observation_dim=discrete_observation_dim,
         state_dim=state_dim,
         batch_size=batch_size,
     )
