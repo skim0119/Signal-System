@@ -39,4 +39,6 @@ class ProbabilityParameter(Parameter[SoftmaxTransformer]):
     """
 
     def __init__(self, value: Array) -> None:
-        super().__init__(value=value, transformer=SoftmaxTransformer())
+        super().__init__(
+            value=jnp.asarray(value), transformer=SoftmaxTransformer()
+        )
