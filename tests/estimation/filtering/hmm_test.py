@@ -7,7 +7,7 @@ from ss.estimation.filtering import HmmFilter, filtering
 from ss.system import HiddenMarkovModel, simulate
 from ss.utility.parameter.probability import ProbabilityParameter
 
-class TestHMMFilter:
+class TestHmmFilter:
 
     @pytest.fixture
     def hmm_filter(self) -> HmmFilter:
